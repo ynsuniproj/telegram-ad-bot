@@ -3,79 +3,148 @@ import { env } from '../config/env';
 import { logger } from '../utils/logger';
 import { downloadTelegramFile } from './telegramDownloader';
 import { executeAdPipeline } from '../services/adPipeline';
+import { setSession, getSession, clearSession } from './sessionStore';
+import { analyzeDesignStyle } from '../vision/designStyleAnalyzer';
 
 /**
- * Handles incoming Telegram messages with strict validation.
+ * Two-step conversation handler.
+ * Step 1: User sends competitor image → system analyzes and waits for caption.
+ * Step 2: User sends caption + product description → system generates final ad.
  */
 export const handleIncomingMessage = async (bot: TelegramBot, msg: TelegramBot.Message) => {
     const chatId = msg.chat.id;
     const userId = msg.from?.id;
 
-    // 1. Validate Sender
+    // Validate sender
     if (!userId || userId !== env.TELEGRAM_ALLOWED_USER_ID) {
         logger.warn(`Unauthorized access attempt from user ID: ${userId}`);
-        return; // Ignore silently
+        return;
     }
 
-    logger.info(`Received authorized message from user ID: ${userId}`);
+    logger.info(`Authorized message from user ID: ${userId}, type: ${msg.photo ? 'photo' : 'text'}`);
 
     try {
-        // 2. Handle Image + Caption OR Image without Caption
+
+        // ─── STEP 1: User sends image ───────────────────────────────────
         if (msg.photo && msg.photo.length > 0) {
-            // Get highest resolution photo (last element in the array)
             const bestPhoto = msg.photo[msg.photo.length - 1];
             const fileId = bestPhoto.file_id;
-            const caption = msg.caption || '';
 
-            const processingMsg = await bot.sendMessage(chatId, "Downloading image...");
+            const statusMsg = await bot.sendMessage(chatId,
+                '🔍 جاري تحليل صورة الإعلان...\n_Analyzing competitor ad design..._',
+                { parse_mode: 'Markdown' }
+            );
 
-            logger.info(`Extracting file_id: ${fileId}, caption: "${caption}"`);
+            // Download image
+            const imagePath = await downloadTelegramFile(fileId);
+            logger.info(`Competitor image saved: ${imagePath}`);
 
-            // 1. Download and save Locally
-            const savedImagePath = await downloadTelegramFile(fileId);
-            logger.info(`Image processing step complete. Saved path: ${savedImagePath}`);
-
-            await bot.editMessageText("Analyzing visual style and drafting AI prompt...", {
+            // Run design style analysis immediately
+            await bot.editMessageText('🎨 جاري استخراج أسلوب التصميم...', {
                 chat_id: chatId,
-                message_id: processingMsg.message_id
+                message_id: statusMsg.message_id,
+                parse_mode: 'Markdown'
             });
 
-            // 2. Trigger the AI Generation Pipeline
-            try {
-                const generatedImagePath = await executeAdPipeline(savedImagePath, caption, fileId);
+            const designStyle = await analyzeDesignStyle(imagePath);
 
-                // 3. Return the generated Image
-                await bot.sendPhoto(chatId, generatedImagePath, {
-                    caption: `✅ Ad Background Generated successfully!`
+            // Save session
+            setSession(userId, {
+                competitorImagePath: imagePath,
+                competitorFileId: fileId,
+                designStyle,
+                createdAt: Date.now()
+            });
+
+            // Ask user for caption and product description
+            await bot.editMessageText(
+                '✅ *تم تحليل التصميم بنجاح!*\n\n' +
+                '📝 الآن أرسل لي:\n' +
+                '• *وصف منتجك* (مثال: كريم ترطيب فاخر للبشرة)\n' +
+                '• *عنوان أو نص الإعلان* (مثال: جمالك يبدأ هنا)\n\n' +
+                '_أرسلهما في رسالة واحدة مفصولة بسطر جديد_',
+                {
+                    chat_id: chatId,
+                    message_id: statusMsg.message_id,
+                    parse_mode: 'Markdown'
+                }
+            );
+
+            return;
+        }
+
+        // ─── STEP 2: User sends caption + product description ──────────
+        if (msg.text) {
+            const session = getSession(userId);
+
+            if (!session) {
+                // No active session — guide the user
+                await bot.sendMessage(chatId,
+                    '📸 ابدأ بإرسال صورة إعلان المنافس أولاً.\n_Please send the competitor ad image first._',
+                    { parse_mode: 'Markdown' }
+                );
+                return;
+            }
+
+            // Handle /reset command
+            if (msg.text.trim().toLowerCase() === '/reset') {
+                clearSession(userId);
+                await bot.sendMessage(chatId, '🔄 تم إعادة التشغيل. أرسل صورة إعلان المنافس للبدء.');
+                return;
+            }
+
+            const lines = msg.text.trim().split('\n');
+            const productDescription = lines[0]?.trim() || '';
+            const captionText = lines.slice(1).join(' ').trim() || productDescription;
+
+            if (!productDescription) {
+                await bot.sendMessage(chatId, '⚠️ يرجى إرسال وصف المنتج والعنوان في رسالة واحدة.');
+                return;
+            }
+
+            const fullCaption = `${productDescription}\n${captionText}`.trim();
+
+            const genMsg = await bot.sendMessage(chatId,
+                '⚙️ *جاري توليد إعلانك الاحترافي...*\n\n' +
+                '1️⃣ تحليل أسلوب المنافس ✅\n' +
+                '2️⃣ تحليل وصفك الإبداعي ⏳\n' +
+                '3️⃣ توليد الصورة بـ FLUX ⏳\n' +
+                '4️⃣ رسم النصوص العربية ⏳',
+                { parse_mode: 'Markdown' }
+            );
+
+            try {
+                const finalAdPath = await executeAdPipeline(
+                    session.competitorImagePath,
+                    fullCaption,
+                    session.competitorFileId,
+                    session.designStyle
+                );
+
+                await bot.sendPhoto(chatId, finalAdPath, {
+                    caption: '✅ *إعلانك الاحترافي جاهز!*',
+                    parse_mode: 'Markdown'
                 });
 
-                // Cleanup the status message
-                await bot.deleteMessage(chatId, processingMsg.message_id);
+                await bot.deleteMessage(chatId, genMsg.message_id);
+                clearSession(userId);
 
             } catch (pipelineError: any) {
                 logger.error('Pipeline Error:', pipelineError);
-                await bot.editMessageText(`❌ Failed to process the image: ${pipelineError.message || 'Unknown error'}`, {
-                    chat_id: chatId,
-                    message_id: processingMsg.message_id
-                });
+                await bot.editMessageText(
+                    `❌ فشل توليد الإعلان:\n${pipelineError.message || 'خطأ غير معروف'}`,
+                    { chat_id: chatId, message_id: genMsg.message_id }
+                );
             }
 
             return;
         }
 
-        // 3. Handle Text Only
-        if (msg.text) {
-            logger.info(`Received text message: "${msg.text}"`);
-            await bot.sendMessage(chatId, `Text received.\nPlease send an image with a caption to generate an advertisement.`);
-            return;
-        }
-
-        // 4. Handle Invalid Messages
-        logger.info(`Received unsupported message type from ${userId}`);
-        await bot.sendMessage(chatId, "Invalid message format. Please send an image (optionally with a text caption) or a text message.");
+        // Unsupported message type
+        await bot.sendMessage(chatId, '📸 أرسل صورة إعلان المنافس للبدء.');
 
     } catch (error) {
-        logger.error('Error handling telegram message', error);
-        await bot.sendMessage(chatId, 'An error occurred while processing your message. Please try again later.');
+        logger.error('Handler Error:', error);
+        await bot.sendMessage(chatId, '❌ حدث خطأ. حاول مجدداً.');
     }
 };

@@ -3,57 +3,69 @@ import * as path from 'path';
 import * as fs from 'fs';
 import { logger } from '../utils/logger';
 import { AdLayout } from './layoutEngine';
+import { DesignStyle } from '../vision/designStyleAnalyzer';
 
-// Register bundled Arabic fonts from the assets directory
+// Register Arabic fonts from the bundled assets directory
 const fontsDir = path.resolve(process.cwd(), 'src', 'rendering', 'fonts');
-
 const tryRegisterFont = (file: string, family: string) => {
     const fontPath = path.join(fontsDir, file);
     if (fs.existsSync(fontPath)) {
         GlobalFonts.registerFromPath(fontPath, family);
-        logger.info(`Font registered: ${family}`);
-    } else {
-        logger.warn(`Font file not found: ${fontPath}`);
     }
 };
-
 tryRegisterFont('Cairo-Bold.ttf', 'Cairo');
 tryRegisterFont('Cairo-Regular.ttf', 'CairoRegular');
-tryRegisterFont('Tajawal-Bold.ttf', 'Tajawal');
+
+// Resolve Y position from competitor's design style positions
+const resolveYPosition = (position: string, H: number): number => {
+    const p = position.toLowerCase();
+    if (p.includes('top')) return H * 0.12;
+    if (p.includes('center')) return H * 0.50;
+    if (p.includes('bottom')) return H * 0.82;
+    return H * 0.50;
+};
 
 export const renderTypography = async (
     backgroundImagePath: string,
     layout: AdLayout,
-    outputPath: string
+    outputPath: string,
+    designStyle?: DesignStyle | null
 ): Promise<string> => {
-    logger.info(`Rendering Arabic typography on: ${backgroundImagePath}`);
+    logger.info(`Rendering typography. Design style: ${designStyle?.text_effects?.join(', ')}`);
 
-    // Load the background image
     const bgImage = await loadImage(backgroundImagePath);
     const W = bgImage.width || 1024;
     const H = bgImage.height || 1024;
-
     const canvas = createCanvas(W, H);
     const ctx = canvas.getContext('2d');
 
-    // 1. Draw background image
+    // Draw background
     ctx.drawImage(bgImage, 0, 0, W, H);
 
-    // 2. Add subtle dark gradient overlay at bottom for text legibility
-    const grad = ctx.createLinearGradient(0, H * 0.55, 0, H);
+    // Dark gradient overlay — position based on where text will go
+    const headlineY = resolveYPosition(designStyle?.headline_position || 'center', H);
+    const gradCenter = headlineY > H * 0.5 ? 0.5 : 0.0;
+    const grad = ctx.createLinearGradient(0, H * gradCenter, 0, H);
     grad.addColorStop(0, 'rgba(0,0,0,0)');
-    grad.addColorStop(1, 'rgba(0,0,0,0.72)');
+    grad.addColorStop(1, 'rgba(0,0,0,0.75)');
     ctx.fillStyle = grad;
     ctx.fillRect(0, 0, W, H);
 
-    // Helper: draw text with glow + shadow
+    // Text color from competitor style (default white)
+    const textColor = designStyle?.text_color?.startsWith('#')
+        ? designStyle.text_color
+        : '#ffffff';
+    const effects = designStyle?.text_effects || ['drop shadow'];
+    const hasGlow = effects.some(e => e.toLowerCase().includes('glow'));
+    const hasStroke = effects.some(e => e.toLowerCase().includes('stroke'));
+
     const drawText = (
         text: string,
         x: number,
         y: number,
         fontSize: number,
         fontFamily: string,
-        color: string,
+        color: string = textColor,
         align: CanvasTextAlign = 'center',
         maxWidth: number = W - 80
     ) => {
@@ -62,57 +74,70 @@ export const renderTypography = async (
         ctx.textAlign = align;
         ctx.direction = 'rtl';
 
-        // Drop shadow
-        ctx.shadowColor = 'rgba(0,0,0,0.9)';
-        ctx.shadowBlur = 20;
+        // Drop shadow (always)
+        ctx.shadowColor = 'rgba(0,0,0,0.85)';
+        ctx.shadowBlur = 18;
         ctx.shadowOffsetX = 2;
         ctx.shadowOffsetY = 4;
 
-        // Outer glow pass
-        ctx.strokeStyle = 'rgba(0,0,0,0.6)';
-        ctx.lineWidth = fontSize * 0.08;
-        ctx.lineJoin = 'round';
-        ctx.strokeText(text, x, y, maxWidth);
+        // Glow pass
+        if (hasGlow) {
+            ctx.shadowColor = 'rgba(120,180,255,0.6)';
+            ctx.shadowBlur = 28;
+            ctx.fillStyle = color;
+            ctx.fillText(text, x, y, maxWidth);
+            ctx.shadowBlur = 0;
+        }
 
-        // Text fill
+        // Stroke outline
+        if (hasStroke) {
+            ctx.strokeStyle = 'rgba(0,0,0,0.7)';
+            ctx.lineWidth = Math.max(fontSize * 0.06, 1.5);
+            ctx.lineJoin = 'round';
+            ctx.strokeText(text, x, y, maxWidth);
+        }
+
+        // Final text fill
+        ctx.shadowColor = 'rgba(0,0,0,0.7)';
+        ctx.shadowBlur = 12;
         ctx.fillStyle = color;
-        ctx.shadowBlur = 0;
         ctx.fillText(text, x, y, maxWidth);
-
         ctx.restore();
     };
 
     const cx = W / 2;
 
-    // 3. Brand name — top center
+    // Brand name — always top
     if (layout.brandName) {
-        drawText(layout.brandName, cx, H * 0.08, 28, 'CairoRegular', 'rgba(255,255,255,0.85)');
+        drawText(layout.brandName, cx, H * 0.07, 26, 'CairoRegular', 'rgba(255,255,255,0.80)');
     }
 
-    // 4. Main headline — center or upper-center
+    // Headline — use competitor position
     if (layout.headline) {
-        const fontSize = Math.min(72, W / Math.max(layout.headline.length * 0.6, 4));
-        drawText(layout.headline, cx, H * 0.52, fontSize, 'Cairo', '#FFFFFF');
+        const hY = resolveYPosition(designStyle?.headline_position || 'center', H);
+        const fontSize = Math.min(68, W / Math.max(layout.headline.length * 0.55, 4));
+        drawText(layout.headline, cx, hY, fontSize, 'Cairo');
     }
 
-    // 5. Sub-headline — just below main headline
+    // Subheadline — below headline or competitor subtitile position
     if (layout.subheadline) {
-        drawText(layout.subheadline, cx, H * 0.63, 34, 'CairoRegular', 'rgba(220,220,220,0.95)');
+        const subBase = resolveYPosition(designStyle?.subtitle_position || 'below headline', H);
+        drawText(layout.subheadline, cx, subBase, 32, 'CairoRegular', 'rgba(230,230,230,0.95)');
     }
 
-    // 6. Call to action — bottom with highlight box
+    // CTA — use competitor cta position
     if (layout.cta) {
-        const ctaY = H * 0.84;
-        const ctaW = 320;
-        const ctaH = 56;
+        const ctaY = resolveYPosition(designStyle?.cta_position || 'bottom center', H);
+        const ctaW = 300;
+        const ctaH = 52;
         const ctaX = cx - ctaW / 2;
+        const r = 26;
 
-        // CTA background pill
+        // CTA pill background
         ctx.save();
         ctx.fillStyle = 'rgba(255,255,255,0.15)';
-        ctx.strokeStyle = 'rgba(255,255,255,0.6)';
+        ctx.strokeStyle = 'rgba(255,255,255,0.65)';
         ctx.lineWidth = 1.5;
-        const r = 28;
         ctx.beginPath();
         ctx.moveTo(ctaX + r, ctaY - ctaH / 2);
         ctx.lineTo(ctaX + ctaW - r, ctaY - ctaH / 2);
@@ -128,18 +153,13 @@ export const renderTypography = async (
         ctx.stroke();
         ctx.restore();
 
-        drawText(layout.cta, cx, ctaY + 11, 26, 'Cairo', '#FFFFFF');
+        drawText(layout.cta, cx, ctaY + 10, 24, 'Cairo');
     }
 
-    // 7. Save output PNG
-    const outputDir = path.dirname(outputPath);
-    if (!fs.existsSync(outputDir)) {
-        fs.mkdirSync(outputDir, { recursive: true });
-    }
-
-    const buffer = canvas.toBuffer('image/png');
-    fs.writeFileSync(outputPath, buffer);
-
-    logger.info(`Final ad composition saved: ${outputPath}`);
+    // Save
+    const dir = path.dirname(outputPath);
+    if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+    fs.writeFileSync(outputPath, canvas.toBuffer('image/png'));
+    logger.info(`Final ad saved: ${outputPath}`);
     return outputPath;
 };
