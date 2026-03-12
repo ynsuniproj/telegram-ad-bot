@@ -107,30 +107,64 @@ export const renderTypography = async (
 
     const cx = W / 2;
 
+    // Calculate Product Safe Zone (Replicating productRenderer logic)
+    let productX = W * 0.12;
+    if (designStyle?.subject_orientation === 'facing left') {
+        productX = W * 0.65;
+    } else if (designStyle?.subject_orientation === 'facing right') {
+        productX = W * 0.08;
+    }
+    const productY = H * 0.45;
+    const targetWidth = W * 0.32;
+    const targetHeight = H * 0.40; // Rough estimate of product height
+
+    // Helper to determine if a text area overlaps the product
+    const isOverlappingProduct = (tx: number, ty: number, tw: number, th: number) => {
+        return (
+            tx < productX + targetWidth &&
+            tx + tw > productX &&
+            ty < productY + targetHeight &&
+            ty + th > productY
+        );
+    };
+
     // Brand name — always top
     if (layout.brandName) {
         drawText(layout.brandName, cx, H * 0.07, 26, 'CairoRegular', 'rgba(255,255,255,0.80)');
     }
 
-    // Headline — use competitor position
+    // Headline — use competitor position but avoid product
     if (layout.headline) {
-        const hY = resolveYPosition(designStyle?.headline_position || 'center', H);
+        let hY = resolveYPosition(designStyle?.headline_position || 'center', H);
+        let hX = cx;
         const fontSize = Math.min(68, W / Math.max(layout.headline.length * 0.55, 4));
-        drawText(layout.headline, cx, hY, fontSize, 'Cairo');
+
+        // If headline overlaps product, shift it to the opposite side
+        if (isOverlappingProduct(hX - 200, hY - 50, 400, 100)) {
+            hX = productX > W / 2 ? W * 0.25 : W * 0.75;
+        }
+
+        drawText(layout.headline, hX, hY, fontSize, 'Cairo');
     }
 
-    // Subheadline — below headline or competitor subtitile position
+    // Subheadline
     if (layout.subheadline) {
         const subBase = resolveYPosition(designStyle?.subtitle_position || 'below headline', H);
         drawText(layout.subheadline, cx, subBase, 32, 'CairoRegular', 'rgba(230,230,230,0.95)');
     }
 
-    // CTA — use competitor cta position
+    // CTA — avoid product
     if (layout.cta) {
-        const ctaY = resolveYPosition(designStyle?.cta_position || 'bottom center', H);
+        let ctaY = resolveYPosition(designStyle?.cta_position || 'bottom center', H);
+        let ctaX = cx;
+
+        if (isOverlappingProduct(ctaX - 150, ctaY - 30, 300, 60)) {
+            ctaY = H * 0.90; // Push to absolute bottom
+        }
+
         const ctaW = 300;
         const ctaH = 52;
-        const ctaX = cx - ctaW / 2;
+        const rectX = ctaX - ctaW / 2;
         const r = 26;
 
         // CTA pill background
@@ -139,21 +173,21 @@ export const renderTypography = async (
         ctx.strokeStyle = 'rgba(255,255,255,0.65)';
         ctx.lineWidth = 1.5;
         ctx.beginPath();
-        ctx.moveTo(ctaX + r, ctaY - ctaH / 2);
-        ctx.lineTo(ctaX + ctaW - r, ctaY - ctaH / 2);
-        ctx.arcTo(ctaX + ctaW, ctaY - ctaH / 2, ctaX + ctaW, ctaY + ctaH / 2, r);
-        ctx.lineTo(ctaX + ctaW, ctaY + ctaH / 2);
-        ctx.arcTo(ctaX + ctaW, ctaY + ctaH / 2, ctaX + r, ctaY + ctaH / 2, r);
-        ctx.lineTo(ctaX + r, ctaY + ctaH / 2);
-        ctx.arcTo(ctaX, ctaY + ctaH / 2, ctaX, ctaY - ctaH / 2, r);
-        ctx.lineTo(ctaX, ctaY - ctaH / 2);
-        ctx.arcTo(ctaX, ctaY - ctaH / 2, ctaX + r, ctaY - ctaH / 2, r);
+        ctx.moveTo(rectX + r, ctaY - ctaH / 2);
+        ctx.lineTo(rectX + ctaW - r, ctaY - ctaH / 2);
+        ctx.arcTo(rectX + ctaW, ctaY - ctaH / 2, rectX + ctaW, ctaY + ctaH / 2, r);
+        ctx.lineTo(rectX + ctaW, ctaY + ctaH / 2);
+        ctx.arcTo(rectX + ctaW, ctaY + ctaH / 2, rectX + r, ctaY + ctaH / 2, r);
+        ctx.lineTo(rectX + r, ctaY + ctaH / 2);
+        ctx.arcTo(rectX, ctaY + ctaH / 2, rectX, ctaY - ctaH / 2, r);
+        ctx.lineTo(rectX, ctaY - ctaH / 2);
+        ctx.arcTo(rectX, ctaY - ctaH / 2, rectX + r, ctaY - ctaH / 2, r);
         ctx.closePath();
         ctx.fill();
         ctx.stroke();
         ctx.restore();
 
-        drawText(layout.cta, cx, ctaY + 10, 24, 'Cairo');
+        drawText(layout.cta, ctaX, ctaY + 10, 24, 'Cairo');
     }
 
     // Save

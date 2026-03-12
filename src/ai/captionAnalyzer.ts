@@ -6,7 +6,8 @@ export interface CaptionSemantics {
     environment: string;  // training, outdoor, studio, urban, nature, etc.
     emotion: string;      // focus, excitement, peace, confidence, power, etc.
     style: string;        // cinematic, editorial, lifestyle, minimalistic, etc.
-    productCategory: string; // apparel, supplements, beauty, tech, food, etc.
+    productCategory: 'beverage' | 'gadget' | 'luxury' | 'cosmetic' | 'accessory' | 'lifestyle' | 'other';
+    requiresLifestyle: boolean; // True if a human subject is necessary for context
 }
 
 export const analyzeCaptionSemantics = async (caption: string): Promise<CaptionSemantics> => {
@@ -18,40 +19,42 @@ export const analyzeCaptionSemantics = async (caption: string): Promise<CaptionS
     
     Caption: "${caption}"
     
-    Return ONLY a strict JSON object with these exact keys:
-    "mood", "environment", "emotion", "style", "productCategory"
+    Extract the following semantic context and return ONLY a strict JSON object:
+    {
+      "mood": "string",
+      "environment": "string",
+      "emotion": "string",
+      "style": "string",
+      "productCategory": "beverage | gadget | luxury | cosmetic | accessory | lifestyle | other",
+      "requiresLifestyle": boolean
+    }
     
-    - mood: the dominant mood (e.g. intense, luxury, energetic, calm, playful, bold)
-    - environment: the implied scene context (e.g. training, outdoor, office, home, studio)
-    - emotion: the emotional tone you want to evoke (e.g. focus, confidence, joy, power)
-    - style: the visual advertising style (e.g. cinematic, editorial, lifestyle, minimalistic)
-    - productCategory: inferred product type (e.g. sportswear, cosmetics, food, electronics)
-    
-    Do not wrap in markdown. Return raw JSON only.
+    - productCategory: classify the product being described.
+    - requiresLifestyle: true ONLY if the product is apparel, wearable, or explicitly needs a person in context (e.g. skin care application). If it's a bottle, gadget, or accessory, set to false for a studio product shot.
     `;
 
     try {
         const response = await groqClient.chat.completions.create({
-            model: 'llama-3.3-70b-versatile',
-            messages: [{ role: 'user', content: prompt }],
-            temperature: 0.3,
-            max_tokens: 200
+            model: "llama-3.3-70b-versatile",
+            messages: [{ role: "user", content: prompt }],
+            temperature: 0.1,
+            max_tokens: 300
         });
 
-        const content = response.choices[0]?.message?.content?.trim() || '{}';
+        const content = response.choices[0]?.message?.content?.trim() || "{}";
         const semantics = JSON.parse(content) as CaptionSemantics;
-        logger.info(`Caption Semantics: ${JSON.stringify(semantics)}`);
+        logger.info(`Analyzed Semantics: ${JSON.stringify(semantics)}`);
         return semantics;
 
     } catch (error) {
-        logger.warn('Caption semantic analysis failed, using defaults', error);
-        // Return safe defaults so the pipeline continues even if this step fails
+        logger.warn('Caption analysis failed, using lifestyle defaults', error);
         return {
-            mood: 'professional',
-            environment: 'studio',
-            emotion: 'confidence',
-            style: 'cinematic advertising',
-            productCategory: 'lifestyle'
+            mood: "bold",
+            environment: "studio",
+            emotion: "confidence",
+            style: "cinematic",
+            productCategory: "lifestyle",
+            requiresLifestyle: true
         };
     }
 };

@@ -12,6 +12,7 @@ export interface DesignStyle {
     subject_orientation: string;   // "facing left", "facing right", "centered"
     color_palette: string;         // dominant colors description
     lighting_direction: string;    // "left", "right", "top", "dramatic"
+    scene_color_temp: string;      // "warm", "cool", "neutral", "golden hour", "neon"
 }
 
 export const analyzeDesignStyle = async (imagePath: string): Promise<DesignStyle> => {
@@ -25,8 +26,7 @@ export const analyzeDesignStyle = async (imagePath: string): Promise<DesignStyle
     Analyze this competitor advertisement image in detail and extract its complete design intelligence.
     
     Return ONLY a raw JSON object with these exact keys:
-    "headline_position", "subtitle_position", "cta_position", "text_effects", "text_color",
-    "layout_balance", "subject_orientation", "color_palette", "lighting_direction"
+    "layout_balance", "subject_orientation", "color_palette", "lighting_direction", "scene_color_temp"
     
     - headline_position: where the main title text is ("top", "center", "bottom", "top-left", etc.)
     - subtitle_position: where supporting text is ("below headline", "top", "bottom", etc.)
@@ -35,8 +35,9 @@ export const analyzeDesignStyle = async (imagePath: string): Promise<DesignStyle
     - text_color: primary text color as hex or named color (e.g. "#ffffff", "white", "gold")
     - layout_balance: description of visual composition (e.g. "subject on right side, text on left", "centered subject")
     - subject_orientation: "facing left", "facing right", or "centered"
-    - color_palette: description of dominant colors in the ad (e.g. "dark blue and orange, high contrast")
-    - lighting_direction: "from left", "from right", "top-down", "dramatic side", "soft diffused"
+    - color_palette: description of dominant colors (e.g. "dark blue and orange")
+    - lighting_direction: "from left", "from right", "top-down", "side lighting"
+    - scene_color_temp: "warm", "cool", "neutral", "neon purple", "sunset orange"
     
     Do NOT wrap in markdown. Return raw JSON only.
     `;
@@ -74,7 +75,8 @@ export const analyzeDesignStyle = async (imagePath: string): Promise<DesignStyle
             layout_balance: 'centered subject',
             subject_orientation: 'centered',
             color_palette: 'dark background with white text',
-            lighting_direction: 'soft diffused'
+            lighting_direction: 'soft diffused',
+            scene_color_temp: 'neutral'
         };
     }
 };

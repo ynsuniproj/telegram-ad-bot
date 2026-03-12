@@ -1,7 +1,7 @@
 import { analyzeCompetitorImage } from '../vision/imageAnalyzer';
 import { analyzeDesignStyle, DesignStyle } from '../vision/designStyleAnalyzer';
 import { composeFluxPrompt } from '../ai/promptComposer';
-import { analyzeCaptionSemantics } from '../ai/captionAnalyzer';
+import { analyzeCaptionSemantics, CaptionSemantics } from '../ai/captionAnalyzer';
 import { enhancePromptWithScene } from '../ai/sceneEnhancer';
 import { generateFluxImage } from './imageGenerationService';
 import { generateAdLayout } from '../rendering/layoutEngine';
@@ -35,7 +35,7 @@ export const executeAdPipeline = async (
 
         // Step 2: Scene Generation (Strictly No Text)
         logger.info(`[AdPipeline] Stage 1: Scene Generation...`);
-        const basePrompt = await composeFluxPrompt(userCaption, visualStyle);
+        const basePrompt = await composeFluxPrompt(userCaption, visualStyle, semantics);
         const enhancedPrompt = enhancePromptWithScene(basePrompt, semantics);
         const scenePath = await generateFluxImage(enhancedPrompt, jobId);
 
@@ -78,10 +78,11 @@ export const executeAdPipeline = async (
 async function composeFluxPromptWithPlacement(
     caption: string,
     visualStyle: import('../vision/imageAnalyzer').VisualStyle,
-    designStyle: DesignStyle
+    designStyle: DesignStyle,
+    semantics: CaptionSemantics
 ): Promise<string> {
     const { composeFluxPrompt } = await import('../ai/promptComposer');
-    const basePrompt = await composeFluxPrompt(caption, visualStyle);
+    const basePrompt = await composeFluxPrompt(caption, visualStyle, semantics);
 
     // Determine product placement based on subject orientation
     let productPlacement = '';
