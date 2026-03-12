@@ -32,7 +32,7 @@ export const composeFluxPrompt = async (caption: string, visualStyle: VisualStyl
 
     try {
         const response = await groqClient.chat.completions.create({
-            model: "llama3-70b-8192",
+            model: "llama-3.3-70b-versatile",
             messages: [{ role: "user", content: promptInstruction }],
             temperature: 0.7,
             max_tokens: 800
