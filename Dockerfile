@@ -10,7 +10,9 @@ RUN apk add --no-cache \
     jpeg-dev \
     pango-dev \
     giflib-dev \
-    python3
+    python3 \
+    make \
+    pkgconfig
 
 COPY package*.json ./
 RUN npm install

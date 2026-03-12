@@ -1,8 +1,15 @@
 import { z } from 'zod';
 import dotenv from 'dotenv';
+import fs from 'fs';
 import path from 'path';
 
-dotenv.config({ path: path.resolve(process.cwd(), '.env') });
+const envPath = path.resolve(process.cwd(), '.env');
+if (fs.existsSync(envPath)) {
+    dotenv.config({ path: envPath });
+} else {
+    // In production (Render) there is no .env file, variables are injected by the OS
+    dotenv.config();
+}
 
 const envSchema = z.object({
     PORT: z.string().default('3000'),
