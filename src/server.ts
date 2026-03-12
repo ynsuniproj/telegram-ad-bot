@@ -18,8 +18,10 @@ export const startServer = (botInstance: any) => {
     // 3. Webhook Endpoint Registration
     app.post('/webhook/telegram', (req, res) => handleTelegramWebhook(req, res, botInstance));
 
-    app.listen(env.PORT, () => {
-        logger.info(`Server listening on port ${env.PORT}`);
+    // Use process.env.PORT directly to ensure Render's injected port is used
+    const port = parseInt(process.env.PORT || '3000', 10);
+    app.listen(port, () => {
+        logger.info(`Server listening on port ${port}`);
         logger.info(`Webhook target: ${env.PUBLIC_BASE_URL}/webhook/telegram`);
     });
 };

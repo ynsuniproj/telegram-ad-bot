@@ -13,11 +13,13 @@ const bootstrap = async () => {
         // 2. Start Express Webhook Server passing bot instance
         startServer(bot);
 
-        // Graceful shutdown
-        process.on('SIGINT', () => {
+        // Graceful shutdown - handle both SIGINT (Ctrl+C) and SIGTERM (Render shutdown)
+        const shutdown = () => {
             logger.info('Shutting down server gracefully...');
             process.exit(0);
-        });
+        };
+        process.on('SIGINT', shutdown);
+        process.on('SIGTERM', shutdown);
 
     } catch (error) {
         logger.error('Failed to start application:', error);
