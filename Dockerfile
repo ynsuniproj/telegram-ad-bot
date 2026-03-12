@@ -2,7 +2,7 @@ FROM node:18-alpine
 
 WORKDIR /usr/src/app
 
-# Install native dependencies required for compiling the 'canvas' package via node-gyp
+# Install native dependencies for canvas (@napi-rs/canvas) and font rendering
 RUN apk add --no-cache \
     build-base \
     g++ \
@@ -12,7 +12,9 @@ RUN apk add --no-cache \
     giflib-dev \
     python3 \
     make \
-    pkgconfig
+    pkgconfig \
+    fontconfig \
+    ttf-freefont
 
 COPY package*.json ./
 RUN npm install
