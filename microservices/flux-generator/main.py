@@ -22,4 +22,6 @@ def generate(request: PromptRequest):
 
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 8000))
-    uvicorn.run(app, host="0.0.0.0", port=port)
+    # Remove hardcoded 0.0.0.0 and port inside uvicorn to allow command line args
+    # or keep it dynamic depending on the environment.
+    uvicorn.run("main:app", host="0.0.0.0", port=port)
