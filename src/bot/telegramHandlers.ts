@@ -2,6 +2,7 @@ import TelegramBot from 'node-telegram-bot-api';
 import { env } from '../config/env';
 import { logger } from '../utils/logger';
 import { downloadTelegramFile } from './telegramDownloader';
+import { executeAdPipeline } from '../services/adPipeline';
 
 /**
  * Handles incoming Telegram messages with strict validation.
@@ -30,22 +31,34 @@ export const handleIncomingMessage = async (bot: TelegramBot, msg: TelegramBot.M
 
             logger.info(`Extracting file_id: ${fileId}, caption: "${caption}"`);
 
-            // Download and save
-            const savedFilePath = await downloadTelegramFile(fileId);
-            logger.info(`Image processing step complete. Saved path: ${savedFilePath}`);
+            // 1. Download and save Locally
+            const savedImagePath = await downloadTelegramFile(fileId);
+            logger.info(`Image processing step complete. Saved path: ${savedImagePath}`);
 
-            // Reply with confirmation
-            let confirmationText = `✅ Image received successfully.\nSaved to: ${savedFilePath}`;
-            if (caption) {
-                confirmationText += `\nCaption: "${caption}"`;
-            } else {
-                confirmationText += `\n(No caption provided)`;
-            }
-
-            await bot.editMessageText(confirmationText, {
+            await bot.editMessageText("Analyzing visual style and drafting AI prompt...", {
                 chat_id: chatId,
                 message_id: processingMsg.message_id
             });
+
+            // 2. Trigger the AI Generation Pipeline
+            try {
+                const generatedImagePath = await executeAdPipeline(savedImagePath, caption, fileId);
+
+                // 3. Return the generated Image
+                await bot.sendPhoto(chatId, generatedImagePath, {
+                    caption: `✅ Ad Background Generated successfully!`
+                });
+
+                // Cleanup the status message
+                await bot.deleteMessage(chatId, processingMsg.message_id);
+
+            } catch (pipelineError: any) {
+                logger.error('Pipeline Error:', pipelineError);
+                await bot.editMessageText(`❌ Failed to process the image: ${pipelineError.message || 'Unknown error'}`, {
+                    chat_id: chatId,
+                    message_id: processingMsg.message_id
+                });
+            }
 
             return;
         }

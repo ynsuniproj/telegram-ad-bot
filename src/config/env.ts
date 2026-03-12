@@ -19,6 +19,7 @@ const envSchema = z.object({
     TELEGRAM_WEBHOOK_SECRET: z.string().min(1, "Telegram Webhook Secret Token is required"),
     PUBLIC_BASE_URL: z.string().url("Must be a valid URL"),
     GROQ_API_KEY: z.string().min(1, "Groq API Key is required"),
+    HUGGING_FACE_TOKEN: z.string().optional(),
     FLUX_MICROSERVICE_URL: z.string().url("Must be a valid URL").default('http://localhost:8000'),
     LOG_LEVEL: z.string().default('info')
 });
