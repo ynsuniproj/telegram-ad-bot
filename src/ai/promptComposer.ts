@@ -19,15 +19,16 @@ export const composeFluxPrompt = async (caption: string, visualStyle: VisualStyl
     - Camera: ${visualStyle.camera}
     - Layout: ${visualStyle.layout}
 
-    Write a single, highly detailed English prompt to generate the background image for this advertisement.
+    Write a single, highly detailed English prompt to generate the cinematic background image for this advertisement.
     
     CRITICAL RULES:
-    1. Combine the essence of the marketing caption with the specific visual style provided.
-    2. Explicitly instruct the generator to leave a clean, empty space area (Negative Space) for overlaying text later.
-    3. Do NOT generate any text, words, or typography inside the image itself. The result must be a text-free background graphic.
-    4. Focus on professional product photography, 8k resolution, cinematic lighting, and advertising aesthetics.
+    1. Focus EXCLUSIVELY on the environment, scene, and lighting.
+    2. ABSOLUTE RULE: NO TEXT, NO LETTERS, NO LOGOS, NO TYPOGRAPHY, NO CAPTIONS inside the image.
+    3. The image must be a CLEAN BACKGROUND with empty space reserved for graphic overlays.
+    4. Composition: ${visualStyle.composition}. Match the mood of "${caption}".
+    5. Photorealistic 8k resolution, cinematic lighting, professional studio aesthetics.
     
-    Return ONLY the raw prompt string. No conversational filler, no explanations.
+    Return ONLY the raw prompt string. No conversational filler.
     `;
 
     try {

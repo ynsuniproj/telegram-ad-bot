@@ -6,6 +6,8 @@ import { enhancePromptWithScene } from '../ai/sceneEnhancer';
 import { generateFluxImage } from './imageGenerationService';
 import { generateAdLayout } from '../rendering/layoutEngine';
 import { renderTypography } from '../rendering/textRenderer';
+import { injectProductIntoScene } from '../rendering/productRenderer';
+import { validateAdOutput } from '../ai/adValidator';
 import { logger } from '../utils/logger';
 import * as path from 'path';
 
@@ -13,52 +15,63 @@ export const executeAdPipeline = async (
     competitorImagePath: string,
     userCaption: string,
     jobId: string,
-    // Accept pre-analyzed design style from session (Step 1 already ran it)
-    preAnalyzedDesignStyle?: DesignStyle | null
+    designStyleParam: DesignStyle | null,
+    productImagePath: string // Mandatory real product image
 ): Promise<string> => {
-    logger.info(`[AdPipeline] Starting job ${jobId}`);
+    logger.info(`[AdPipeline] Starting Professional Hybrid Pipeline for job ${jobId}`);
 
-    // Step 1: Visual style (for prompt generation)
-    logger.info(`[AdPipeline][1/6] Extracting visual style...`);
-    const visualStyle = await analyzeCompetitorImage(competitorImagePath);
+    let attempts = 0;
+    const maxAttempts = 2;
 
-    // Step 1b: Design style (either from session or re-run)
-    logger.info(`[AdPipeline][1b/6] Obtaining design style...`);
-    const designStyle = preAnalyzedDesignStyle ?? await analyzeDesignStyle(competitorImagePath);
+    while (attempts < maxAttempts) {
+        attempts++;
+        logger.info(`[AdPipeline] Attempt ${attempts}/${maxAttempts}`);
 
-    // Step 2: Analyze caption semantics
-    logger.info(`[AdPipeline][2/6] Analyzing caption semantics...`);
-    const semantics = await analyzeCaptionSemantics(userCaption);
+        // Step 1: Visual and Design Analysis
+        logger.info(`[AdPipeline] Stage 0: Initial Analysis...`);
+        const visualStyle = await analyzeCompetitorImage(competitorImagePath);
+        const designStyle = designStyleParam ?? await analyzeDesignStyle(competitorImagePath);
+        const semantics = await analyzeCaptionSemantics(userCaption);
 
-    // Step 3: Compose base FLUX prompt with product placement intelligence
-    logger.info(`[AdPipeline][3/6] Composing FLUX prompt with product placement...`);
-    const basePrompt = await composeFluxPromptWithPlacement(userCaption, visualStyle, designStyle);
+        // Step 2: Scene Generation (Strictly No Text)
+        logger.info(`[AdPipeline] Stage 1: Scene Generation...`);
+        const basePrompt = await composeFluxPrompt(userCaption, visualStyle);
+        const enhancedPrompt = enhancePromptWithScene(basePrompt, semantics);
+        const scenePath = await generateFluxImage(enhancedPrompt, jobId);
 
-    // Step 4: Enhance with scene realism
-    logger.info(`[AdPipeline][4/6] Scene enhancement...`);
-    const enhancedPrompt = enhancePromptWithScene(basePrompt, semantics);
+        // Step 3: Product Injection
+        logger.info(`[AdPipeline] Stage 2: Product Injection...`);
+        const injectedPath = path.resolve(process.cwd(), 'tmp', 'injected', `injected_${jobId}_${Date.now()}.png`);
+        await injectProductIntoScene({
+            backgroundPath: scenePath,
+            productPath: productImagePath,
+            outputPath: injectedPath,
+            designStyle
+        });
 
-    // Step 5: Generate background image
-    logger.info(`[AdPipeline][5/6] Generating image via FLUX...`);
-    const generatedImagePath = await generateFluxImage(enhancedPrompt, jobId);
+        // Step 4: Typography Rendering
+        logger.info(`[AdPipeline] Stage 3: Typography Layout...`);
+        const adLayout = await generateAdLayout(userCaption, semantics);
+        const finalPath = path.resolve(process.cwd(), 'tmp', 'final', `ad_final_${jobId}_${Date.now()}.png`);
+        await renderTypography(injectedPath, adLayout, finalPath, designStyle);
 
-    // Step 6: Generate Arabic ad layout + render typography using competitor's design style
-    logger.info(`[AdPipeline][6/6] Rendering Arabic typography with competitor layout style...`);
-    const adLayout = await generateAdLayout(userCaption, semantics);
+        // Step 5: Quality Validation
+        logger.info(`[AdPipeline] Stage 4: Quality Validation...`);
+        const validation = await validateAdOutput(finalPath);
 
-    const finalOutputPath = path.resolve(
-        process.cwd(), 'tmp', 'final', `ad_final_${jobId}_${Date.now()}.png`
-    );
+        if (validation.isValid) {
+            logger.info(`[AdPipeline] Job ${jobId} completed successfully.`);
+            return finalPath;
+        }
 
-    const finalImagePath = await renderTypography(
-        generatedImagePath,
-        adLayout,
-        finalOutputPath,
-        designStyle // Pass design style to replicate competitor typography positions/effects
-    );
+        logger.warn(`[AdPipeline] Validation failed on attempt ${attempts}: ${validation.reason}`);
+        if (attempts === maxAttempts) {
+            logger.info(`[AdPipeline] Max attempts reached, returning best effort.`);
+            return finalPath;
+        }
+    }
 
-    logger.info(`[AdPipeline] Job ${jobId} completed. Final: ${finalImagePath}`);
-    return finalImagePath;
+    throw new Error('Pipeline failed after maximum retry attempts.');
 };
 
 // Compose prompt that includes product placement based on subject orientation

@@ -5,10 +5,11 @@
 export interface UserSession {
     competitorImagePath: string;
     competitorFileId: string;
-    // Use any here to avoid circular imports — the adPipeline casts it correctly
+    productImagePath?: string; // Step 2: User provides real product image
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     designStyle: any | null;
     createdAt: number;
+    step: 'AWAITING_IMAGE' | 'AWAITING_CONTENT';
 }
 
 const sessions = new Map<number, UserSession>();
