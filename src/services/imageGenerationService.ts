@@ -4,7 +4,7 @@ import * as path from 'path';
 import { logger } from '../utils/logger';
 
 // Hugging Face Inference API for FLUX.1-schnell
-const HF_API_URL = 'https://api-inference.huggingface.co/models/black-forest-labs/FLUX.1-schnell';
+const HF_API_URL = 'https://router.huggingface.co/hf-inference/models/black-forest-labs/FLUX.1-schnell';
 const HF_TOKEN = process.env.HUGGING_FACE_TOKEN;
 
 export const generateFluxImage = async (prompt: string, jobId: string): Promise<string> => {
