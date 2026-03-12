@@ -1,45 +1,58 @@
 import axios from 'axios';
 import * as fs from 'fs';
 import * as path from 'path';
-import { env } from '../config/env';
 import { logger } from '../utils/logger';
 
+// Hugging Face Inference API for FLUX.1-schnell
+const HF_API_URL = 'https://api-inference.huggingface.co/models/black-forest-labs/FLUX.1-schnell';
+const HF_TOKEN = process.env.HUGGING_FACE_TOKEN;
+
 export const generateFluxImage = async (prompt: string, jobId: string): Promise<string> => {
-    logger.info(`Sending generation request to FLUX API for job ${jobId}...`);
+    logger.info(`Sending generation request to Hugging Face FLUX for job ${jobId}...`);
+
+    if (!HF_TOKEN) {
+        throw new Error('HUGGING_FACE_TOKEN is not set in environment variables');
+    }
 
     try {
-        const response = await axios.post(`${env.FLUX_MICROSERVICE_URL}/generate`, {
-            prompt: prompt,
-            width: 1024,
-            height: 1024
-        });
+        const response = await axios.post(
+            HF_API_URL,
+            { inputs: prompt },
+            {
+                headers: {
+                    'Authorization': `Bearer ${HF_TOKEN}`,
+                    'Content-Type': 'application/json',
+                    'Accept': 'image/png'
+                },
+                responseType: 'arraybuffer',
+                timeout: 120000 // 2 minutes — model may need to warm up
+            }
+        );
 
-        const data = response.data;
-        if (!data.success || !data.image) {
-            throw new Error(`FLUX API returned an invalid response: ${JSON.stringify(data)}`);
-        }
-
-        // 1. Ensure temp storage directory exists
+        // Ensure temp directory exists
         const outputDir = path.resolve(process.cwd(), 'tmp', 'generated');
         if (!fs.existsSync(outputDir)) {
             fs.mkdirSync(outputDir, { recursive: true });
         }
 
-        // 2. Decode base64 to binary and write to file
-        const base64Data = data.image.replace(/^data:image\/\w+;base64,/, "");
-        const binaryBuffer = Buffer.from(base64Data, 'base64');
-
+        // Write binary image data to file
         const filename = `generated_${jobId}_${Date.now()}.png`;
         const filePath = path.join(outputDir, filename);
 
-        fs.writeFileSync(filePath, binaryBuffer);
+        fs.writeFileSync(filePath, response.data);
 
-        logger.info(`Generative FLUX Image successfully saved at: ${filePath}`);
+        logger.info(`FLUX Image saved successfully at: ${filePath}`);
 
         return filePath;
 
     } catch (error: any) {
-        logger.error('Failed to generate image via FLUX Microservice', error.response?.data || error.message);
-        throw error;
+        if (error.response?.status === 503) {
+            throw new Error('FLUX model is loading, please retry in 20-30 seconds.');
+        }
+        const errMsg = error.response?.data
+            ? Buffer.from(error.response.data).toString('utf8')
+            : error.message;
+        logger.error('Failed to generate image via Hugging Face API:', errMsg);
+        throw new Error(`Image generation failed: ${errMsg}`);
     }
 };
